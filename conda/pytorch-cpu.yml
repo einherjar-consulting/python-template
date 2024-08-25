@@ -1,0 +1,27 @@
+name: pytorch-cpu
+channels:
+    - pytorch
+    - nvidia
+    - conda-forge
+    - anaconda
+dependencies:
+    - python=3.10
+    - pytorch
+    - torchvision
+    - onnx
+    - onnxruntime
+    - numpy
+    - pip
+    - pip:
+        - matplotlib
+        - scikit-image
+        - pandas
+        - jupyter
+        - scikit-learn
+        - dvc
+        - opencv-python
+        - opencv-contrib-python
+        - pycocotools
+        - build
+        - pre-commit
+
