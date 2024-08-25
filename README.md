@@ -1,5 +1,7 @@
 # 1 Python Template
 
+[![pre-commit](https://github.com/einherjar-consulting/python-template/actions/workflows/pre-commit.yml/badge.svg?branch=main&event=push)](https://github.com/einherjar-consulting/python-template/actions/workflows/pre-commit.yml)
+
 This repository is a template for a typical deep-learning Python project that can also be distributed as a Python package. Common code is placed in the `src/library/` directory (rename `library` to match the name you want to give to the library). The common idea it to make the contents of the repository easy to understand for others and as easy as possible for the others to replicate the results. Avoid using absolute path names.
 
 # 2 Contents
