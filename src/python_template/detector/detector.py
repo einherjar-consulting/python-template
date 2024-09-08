@@ -50,8 +50,7 @@ class Detector:
         torch.tensor
             Preprocessed image
         """
-        image_tensor = torch.from_numpy(image).permute(2, 0, 1)
-        preprocessed = self.preprocessor(image_tensor).unsqueeze(0)
+        preprocessed = self.preprocessor(image).unsqueeze(0)
         return preprocessed
 
     def process(self, image: torch.Tensor) -> any:

@@ -1,5 +1,5 @@
 from torchvision.transforms import v2
-from typing import Dict, Union
+from typing import Dict, Union, Tuple
 import ast
 import torch
 import numpy as np
@@ -8,12 +8,22 @@ import numpy as np
 def deserialize_compose_transformation(
     configuration: Dict, verbose: bool = False
 ) -> v2.Compose:
-    """Deserializes a composed transformation from a dictionary. Supports also cases where the
-    configuration has been read from a YAML file. YAML does not support tuples, these get converted
-    into strings. For example (123, 123) becomes "(123, 123)".
+    """Deserializes a composed transformation from a given dictionary. Supports transformations from
+    torchvision.transforms.v2 plus the following operations:
+    - "From_numpy", calls torch.from_numpy and converts the input into torch.Tensor
+    - "Unsqueeze", calls torch.unsqueeze function on the input tensor.
+    - "Permute", calls torch.permute function on the input tensor.
+
+    For supported transformations, take a look at https://pytorch.org/vision/main/transforms.html#v2-api-ref.
+
+    Supports also cases where the configuration has been read from a YAML file. For example,
+    YAML does not support tuples, these get converted into strings. For example (123, 123) becomes "(123, 123)".
+    In the following examples:
 
     {"RandomResizedCrop":{"size" : (123, 123)}}
     {"RandomResizedCrop":{"size" : "123, 123"}}
+
+    (123, 123) and "123, 123" are converted into a tuple.
 
     Parameters
     ----------
@@ -56,24 +66,176 @@ def deserialize_compose_transformation(
         # (1, 2) is interpreted as string, i.e. '(1, 2)' and passing that as a
         # parameter to the transformation function would not work. Therefore, we try
         # to reconstruct the parameters using Python types.
-        reconstructed_parameters = {}
-        for parameter in configuration[function]:
-            parameter_value = literal_evaluation(configuration[function][parameter])
-            reconstructed_parameters.update({parameter: parameter_value})
 
-        if verbose:
-            print(f"Reconstructed parameters: {reconstructed_parameters}")
+        if configuration[function] is not None:
+            reconstructed_parameters = {}
+            for parameter in configuration[function]:
+                parameter_value = literal_evaluation(configuration[function][parameter])
+                reconstructed_parameters.update({parameter: parameter_value})
 
-        try:
-            transform = getattr(v2, function)(**reconstructed_parameters)
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to instantiate function '{function}' with parameters {reconstructed_parameters}: {e}"
-            )
+            if verbose:
+                print(f"Reconstructed parameters: {reconstructed_parameters}")
+
+            try:
+                if function == "From_numpy":
+                    transform = From_numpy(**reconstructed_parameters)
+                elif function == "Unsqueeze":
+                    transform = Unsqueeze(**reconstructed_parameters)
+                elif function == "Permute":
+                    transform = Permute(**reconstructed_parameters)
+                else:
+                    transform = getattr(v2, function)(**reconstructed_parameters)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to instantiate function '{function}' with parameters {reconstructed_parameters}: {e}"
+                )
+        else:
+            try:
+                if function == "From_numpy":
+                    transform = From_numpy()
+                elif function == "Unsqueeze":
+                    transform = Unsqueeze()
+                elif function == "Permute":
+                    transform = Permute()
+                else:
+                    transform = getattr(v2, function)()
+            except Exception as e:
+                raise RuntimeError(f"Failed to instantiate function '{function}': {e}")
 
         transforms.append(transform)
 
     return v2.Compose(transforms)
+
+
+class From_numpy:
+    """A class that converts numpy ndarrays into torch.Tensor format"""
+
+    def __init__(self, clone: bool = True):
+        """Constructor.
+
+        Parameters
+        ----------
+        clone : bool, optional
+            Clone the converted tensor, by default True
+        """
+        self.clone = clone
+
+    def __call__(self, ndarray: np.ndarray) -> torch.Tensor:
+        """Converts the given ndarray into Torch tensor, by default makes a clone.
+
+        Parameters
+        ----------
+        ndarray : np.ndarray
+            NDarray that is converted into tensor
+
+        Returns
+        -------
+        torch.Tensor
+            Array converted into tensor
+        """
+        if self.clone:
+            my_tensor: torch.Tensor = torch.from_numpy(ndarray).clone()
+        else:
+            my_tensor: torch.Tensor = torch.from_numpy(ndarray)
+
+        return my_tensor
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(clone={self.clone})"
+
+
+class Unsqueeze:
+    def __init__(self, dim: int = 0):
+        """Constructor.
+
+        Parameters
+        ----------
+        dim : int, optional
+            The dimension along which to unsqueeze, by default 0
+        """
+        self.dim = dim
+
+    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Applies the unsqueeze operation to the given tensor.
+
+        Parameters
+        ----------
+        tensor : torch.Tensor
+            The input tensor to apply unsqueeze to.
+
+        Returns
+        -------
+        torch.Tensor
+            The tensor with an additional dimension.
+        """
+
+        return torch.unsqueeze(tensor, self.dim)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(dim={self.dim})"
+
+
+class Permute:
+    """
+    A transformation class to permute the dimensions of a tensor, which can
+    be added to a torchvision.transforms.v2.Compose pipeline.
+
+    Parameters
+    ----------
+    dims : tuple of int
+        The desired ordering of dimensions after permutation.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from torchvision import transforms
+    >>> transform = transforms.v2.Compose([
+    ...     transforms.v2.ToTensor(),
+    ...     Permute((2, 0, 1))  # Permute from (H, W, C) -> (C, H, W)
+    ... ])
+    >>> example_tensor = torch.rand(224, 224, 3)
+    >>> transformed_tensor = transform(example_tensor)
+    >>> print(transformed_tensor.shape)
+    torch.Size([3, 224, 224])
+    """
+
+    def __init__(self, dims: Tuple[int]):
+        """
+        Initializes the transformation with the desired dimension order.
+
+        Parameters
+        ----------
+        dims : tuple of int
+            The desired ordering of dimensions after permutation.
+        """
+        self.dims = dims
+
+    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+        """
+        Applies the permute transformation to the given tensor.
+
+        Parameters
+        ----------
+        tensor : torch.Tensor
+            The input tensor to be permuted.
+
+        Returns
+        -------
+        torch.Tensor
+            The tensor with permuted dimensions.
+        """
+        return tensor.permute(*self.dims)
+
+    def __repr__(self):
+        """
+        Returns a string representation of the transform for easy debugging and printing.
+
+        Returns
+        -------
+        str
+            A string describing the transformation and the permutation dimensions.
+        """
+        return f"{self.__class__.__name__}(dims={self.dims})"
 
 
 def literal_evaluation(literal: Union[str, int, float]) -> any:
