@@ -1,5 +1,6 @@
 from python_template.preprocessing import deserialize_compose_transformation
 import torch
+import numpy as np
 
 
 def test_deserialize_compose_transformation_resize():
@@ -41,3 +42,33 @@ def test_deserialize_compose_transformation_dtype():
     result1 = processor(image)
 
     assert result1.dtype == torch.float16
+
+
+def test_deserialize_compose_transformation_from_numpy():
+
+    image = np.ones((20, 30), dtype=np.float32)
+
+    # This version should make a clone of the numpy array, so memory
+    # addresses should be different
+    processor = deserialize_compose_transformation(configuration={"From_numpy": ""})
+
+    image_tensor = processor(image)
+
+    numpy_memory_address = image.ctypes.data
+    torch_memory_address = image_tensor.data_ptr()
+
+    assert isinstance(image_tensor, torch.Tensor)
+    assert image_tensor.dtype == torch.float32
+    assert numpy_memory_address != torch_memory_address
+
+    # This version should not make a clone of the numpy array, so memory
+    # addresses should be the same
+    processor = deserialize_compose_transformation(
+        configuration={"From_numpy": {"clone": False}}
+    )
+
+    image_tensor = processor(image)
+
+    assert isinstance(image_tensor, torch.Tensor)
+    assert image_tensor.dtype == torch.float32
+    assert numpy_memory_address != torch_memory_address
